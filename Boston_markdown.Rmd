@@ -1,0 +1,195 @@
+---
+title: "Boston_crime_map"
+author: "Pierre Mulliez"
+date: "03/06/2021"
+output: html_document
+---
+<h2 style= "text-align: center; color: blue;font-weight: bold;">Boston crime map using leaflet</h2>
+![](boston.jpg)
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**source**: Kaggle <br>
+**Link**: https://www.kaggle.com/AnalyzeBoston/crimes-in-boston?select=crime.csv
+
+## Obective
+- Understand the crime rate in Boston by District 
+- Drill down by day of the week; week end versus weekday 
+- Zoom in on a district observing what type of crime is committed 
+
+## Loading dataset
+
+```{r load,include=FALSE}
+path_data_Pierre <- "C:/Users/Pierre Computer/Documents/IE_classes/R_adv/assignment_1_Pierre_Mulliez/crime.csv"
+library(leaflet);
+bostondata <- data.frame(read.csv(path_data_Pierre))
+```
+
+## Small EDA
+
+
+```{r eda, echo=FALSE}
+head(bostondata)
+paste("number of collumns", toString(length(bostondata)))
+paste("number of rows", toString(nrow(bostondata)))
+```
+
+Note that the siz of the dataset, we will subset it to avoid long loading time.
+```{r libraries, echo=FALSE, include=FALSE}
+library(dplyr)
+#install.packages("tidyverse")
+library(lubridate)
+```
+
+```{r sample, echo=TRUE}
+#lets select only 2018 data, avoid loading time of the dataset
+paste("what years are in the dataset? ", toString(unique(year(bostondata$OCCURRED_ON_DATE))))
+paste("The dataset size has", as.character(unlist(count(bostondata[year(bostondata$OCCURRED_ON_DATE) == "2018",]))), "rows")
+#still quite big, lets get only June 
+subboston <- bostondata %>% filter(year(bostondata$OCCURRED_ON_DATE) == "2018" & month(bostondata$OCCURRED_ON_DATE) == "6",)
+#given the size of the dataset lets select only monday and sunday
+subbostonMondays <- subboston  %>% filter(DAY_OF_WEEK == "Monday" | DAY_OF_WEEK == "Sunday")
+```
+
+
+## Build the first map
+
+```{r 1map, echo=FALSE}
+# Plot leaflet map
+bos_map <- leaflet(data =  subbostonMondays);
+
+# Add outline
+bos_map <- addTiles(bos_map);
+
+#Using piping for remaining layers 
+bos_map <- addCircles(bos_map, lng = ~Long, lat = ~Lat);
+bos_map
+```
+We can notice that we have outlier(s) point(s)
+
+
+```{r outlier, echo=TRUE}
+#we can notice some Outliers lets remove them using UDF 
+removeoutliers <- function(col,df){
+  listquantiles <-  quantile(col, probs = c(0.99,0.01), na.rm = TRUE)
+  newdf <- subset(df, col > listquantiles[2] & col < listquantiles[1])
+  return(newdf)
+}
+cleanBoston <- removeoutliers(subbostonMondays$Lat,subbostonMondays)
+```
+
+## Map by district 
+
+### Preparation 
+- Tag the shooting using the size of the pin 
+- Color code the district 
+- add a control panel to visualize the desired district 
+
+```{r prepration1, echo=TRUE}
+#tag the shooting as bigger point
+cleanBoston$size <- 20
+cleanBoston[cleanBoston$SHOOTING == "Y",]$size <- 80
+#tag the district with different colors 
+dist <- unique(cleanBoston[cleanBoston$DISTRICT != "",]$DISTRICT)
+color <- c("green","blue","orange","purple","red","coral","black", "brown","chocolate","grey", "orchid","yellow")
+colordf <- data.frame(DISTRICT = dist, col = color)
+#merge the color dataframe to our boston df
+t <- merge(cleanBoston, colordf, by.x = "DISTRICT", by.y = "DISTRICT")
+```
+
+### Build the map  
+- Text appearing on click corresponding to the offense type
+
+```{r rendering1, echo=TRUE}
+# Plot leaflet map
+bos_m <- leaflet(t) %>% addTiles()
+
+#We will have the popup text to equal the offence 
+
+bos_map <- addCircles(bos_m, lng = ~Long, lat = ~Lat, popup = ~OFFENSE_CODE_GROUP, color = ~col, radius = ~size,fill = TRUE,group = ~DISTRICT )
+bos_map <- addLegend(bos_map,"bottomright", 
+                      labels = colordf$DISTRICT, 
+                     colors = colordf$col,
+                     title = "Disticts",
+                     opacity = 1,
+                     group = "Legend") 
+bos_map <- addLayersControl(bos_map, position = "bottomleft", overlayGroups = c("Legend",unique(t$DISTRICT)) , options = layersControlOptions(collapsed = FALSE))
+
+bos_map
+```
+Note: West Roxbery - B2 seems like a safe neighboorod 
+
+## Map by day  
+### Preparation 
+- Calculate the probability of offense given all the offenses in the dataset 
+- Color code the days 
+- Enlarge rare events  
+
+```{r prepration2, echo=TRUE}
+#color of the day of the week 
+t$mcol <- "red"
+t[t$DAY_OF_WEEK == "Sunday",]$mcol <- "blue"
+
+#We will analyse more deeply what the proportion of offenses are and add them as popup
+t$prop <- paste("offence", toString(0),"%")
+t$propint <- 0
+unique(t$OFFENSE_CODE_GROUP)
+t <- na.omit(t)
+for (var in unique(t$OFFENSE_CODE_GROUP)){
+  perc <- round(count(t[t$OFFENSE_CODE_GROUP == var,])/nrow(t),digits = 2)
+  t[t$OFFENSE_CODE_GROUP == var,]$prop <- paste(var, toString(perc), "%")
+  t[t$OFFENSE_CODE_GROUP == var,]$propint <- toString(perc)
+}
+
+#We will enlarge the very rare events 
+t$evsize <- 20
+t[t$propint < 0.05,]$evsize <- 40
+t[t$propint < 0.02,]$evsize <- 60
+```
+
+
+### Build the map  
+- reset the view for better visibility 
+
+```{r rendering2, echo=FALSE}
+#We will enlarge the very rare events 
+t$evsize <- 20
+t[t$propint < 0.05,]$evsize <- 40
+t[t$propint < 0.02,]$evsize <- 60
+
+#Set the view for better visibility 
+bos_m <- leaflet(t) %>% addTiles() 
+bos_map <- addCircles(bos_m, lng = ~Long, lat = ~Lat, popup = ~prop, color = ~mcol, radius = ~evsize,fill = TRUE,group = ~DAY_OF_WEEK )
+bos_map <- addLegend(bos_map,"bottomright", 
+                     labels = c("Monday","Tuesday"), 
+                     colors = c("red","blue"),
+                     title = "Days",
+                     opacity = 1) %>% addLayersControl(position = "bottomright", overlayGroups = c(unique(t$DAY_OF_WEEK)) , options = layersControlOptions(collapsed = FALSE)) 
+bos_map <- setView(bos_map, mean(t$Long),mean(t$Lat),zoom = 12)
+
+bos_map
+```
+Note: Apart for Brighton crime that seemed higher on mondays the map does not point toward a notable difference in the rate of crime between sundays and mondays
+
+## Apply the map to a single district 
+- District B12
+- Highlighting Dudley street
+```{r rendering3, echo=FALSE}
+######APPLY THE MAP TO A SINGLE DISTRICT######
+#Highlighting Dudley borough
+tb2 <- filter(t, DISTRICT == "B2")
+bos_m <- leaflet(tb2) %>% addTiles() 
+bos_map <- addCircles(bos_m, lng = ~Long, lat = ~Lat, popup = ~prop, color = ~mcol, radius = ~evsize,fill = TRUE,group = ~DAY_OF_WEEK )
+bos_map <- addRectangles(bos_map,lng1 = -71.0870606,lng2 = -71.0826082,lat1 = 42.3311578,lat2 = 42.3282152,label = "Dudley",fillColor = "transparent",color = "green")
+bos_map <- addLegend(bos_map,"bottomright", 
+                     labels = c("Monday","Tuesday"), 
+                     colors = c("red","blue"),
+                     title = "Days",
+                     opacity = 1) %>% addLayersControl(position = "bottomright", overlayGroups = c(unique(t$DAY_OF_WEEK)) , options = layersControlOptions(collapsed = FALSE)) 
+bos_map
+```
+Note: a lot of rare event happening in this part of the city, particularly in Dudley street
