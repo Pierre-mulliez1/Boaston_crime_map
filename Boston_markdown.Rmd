@@ -69,7 +69,7 @@ bos_map <- addTiles(bos_map);
 bos_map <- addCircles(bos_map, lng = ~Long, lat = ~Lat);
 bos_map
 ```
-We can notice that we have outlier(s) point(s)
+*Note*: We can see that we have outlier(s) point(s)
 
 
 ```{r outlier, echo=TRUE}
@@ -121,7 +121,7 @@ bos_map <- addLayersControl(bos_map, position = "bottomleft", overlayGroups = c(
 
 bos_map
 ```
-Note: West Roxbery - B2 seems like a safe neighboorod 
+*Note*: West Roxbery - B2 seems like a safe neighboorod 
 
 ## Map by day  
 ### Preparation 
@@ -153,7 +153,7 @@ t[t$propint < 0.02,]$evsize <- 60
 
 
 ### Build the map  
-- reset the view for better visibility 
+- Reset the view for better visibility 
 
 ```{r rendering2, echo=FALSE}
 #We will enlarge the very rare events 
@@ -173,7 +173,7 @@ bos_map <- setView(bos_map, mean(t$Long),mean(t$Lat),zoom = 12)
 
 bos_map
 ```
-Note: Apart for Brighton crime that seemed higher on mondays the map does not point toward a notable difference in the rate of crime between sundays and mondays
+*Note*: Apart for Brighton crime that seemed higher on mondays the map does not point toward a notable difference in the rate of crime between sundays and mondays
 
 ## Apply the map to a single district 
 - District B12
@@ -192,4 +192,39 @@ bos_map <- addLegend(bos_map,"bottomright",
                      opacity = 1) %>% addLayersControl(position = "bottomright", overlayGroups = c(unique(t$DAY_OF_WEEK)) , options = layersControlOptions(collapsed = FALSE)) 
 bos_map
 ```
-Note: a lot of rare event happening in this part of the city, particularly in Dudley street
+*Note*: a lot of rare event happening in this part of the city, particularly in Dudley street
+
+
+## Apply the map to Clusters
+### Preparation 
+- Run a kmeans set to 4 clusters 
+- Color code the clusters 
+```{r preparation4, echo=TRUE}
+# Compute k-means with k = 4
+set.seed(123)
+tk <- select(tb2,Lat, Long)
+km.res <- kmeans(tk, 4, nstart = 25)
+tkb <- cbind(tb2, cluster = km.res$cluster)
+
+#tag the district with different colors 
+clust <- unique(tkb$cluster)
+colore <- c("green","blue","orange","purple")
+colordf2 <- data.frame(cluster = clust, colr = colore)
+#merge the color dataframe to our boston df
+tkb <- merge(tkb, colordf2, by.x = "cluster", by.y = "cluster")
+```
+
+### Build the map  
+- Reset the view for better visibility 
+```{r rendering4, echo=FALSE}
+####APPLY THE MAP TO THE CLUSTERS
+bos_m <- leaflet(tkb) %>% addTiles() 
+bos_map <- addCircles(bos_m, lng = ~Long, lat = ~Lat, popup = ~prop,radius = ~evsize, color = ~colr, fill = TRUE)
+bos_map <- addLegend(bos_map,"bottomright", 
+                     labels = clust, 
+                     colors = colore,
+                     title = "Clusters",
+                     opacity = 1) %>%  setView( mean(tkb$Long),mean(tkb$Lat),zoom = 14)
+bos_map
+```
+*Note*: Once again we osberve that the cluster 1 correspond to our highlight of dudley street, the west part of the neighborhood seems to record less crimes 

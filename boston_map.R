@@ -125,3 +125,30 @@ bos_map <- addLegend(bos_map,"bottomright",
                      opacity = 1) %>% addLayersControl(position = "bottomright", overlayGroups = c(unique(t$DAY_OF_WEEK)) , options = layersControlOptions(collapsed = FALSE)) 
 bos_map
 
+
+#####On step deeper kmean over the B2 distict#####
+# Compute k-means with k = 4
+set.seed(123)
+tk <- select(tb2,Lat, Long)
+km.res <- kmeans(tk, 4, nstart = 25)
+tkb <- cbind(tb2, cluster = km.res$cluster)
+
+#tag the district with different colors 
+clust <- unique(tkb$cluster)
+colore <- c("green","blue","orange","purple")
+colordf2 <- data.frame(cluster = clust, colr = colore)
+#merge the color dataframe to our boston df
+tkb <- merge(tkb, colordf2, by.x = "cluster", by.y = "cluster")
+
+####APPLY THE MAP TO THE CLUSTERS
+bos_m <- leaflet(tkb) %>% addTiles() 
+bos_map <- addCircles(bos_m, lng = ~Long, lat = ~Lat, popup = ~prop,radius = ~evsize, color = ~colr, fill = TRUE)
+bos_map <- addLegend(bos_map,"bottomright", 
+                     labels = clust, 
+                     colors = colore,
+                     title = "Clusters",
+                     opacity = 1) %>%  setView( mean(tkb$Long),mean(tkb$Lat),zoom = 14)
+bos_map
+
+
+
